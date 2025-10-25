@@ -53,3 +53,41 @@ export const sendCommandToPC = async (req, res, next) => {
     next(err);
   }
 };
+export const updatePC = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const updated = await PC.findByIdAndUpdate(id, req.body, { new: true });
+    if (!updated)
+      return res.status(404).json(formatResponse(false, "PC not found"));
+    res.json(formatResponse(true, "pc updated", updated));
+  } catch (err) {
+    next(err);
+  }
+};
+export const deletePC = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check if PC exists
+    const pc = await PC.findById(id);
+    if (!pc) {
+      return res.status(404).json(formatResponse(false, "pc not found"));
+    }
+
+    // Delete the PC
+    await PC.findByIdAndDelete(id);
+
+    // Log the deletion
+    await Log.create({
+      action: "delete_pc",
+      pc: id,
+      admin: req.admin?.id,
+      details: { name: pc.name, ipAddress: pc.ipAddress },
+    });
+
+    res.json(formatResponse(true, "pc deleted successfully", { id }));
+  } catch (err) {
+    next(err);
+  }
+};
+
