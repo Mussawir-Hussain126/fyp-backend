@@ -47,3 +47,23 @@ export const getProfile = async (req, res, next) => {
     next(err);
   }
 };
+
+export const getDashboardStats = async (req, res, next) => {
+  try {
+    const totalPCs = await PC.countDocuments();
+    const totalTasks = await Task.countDocuments();
+    const totalLogs = await Log.countDocuments();
+    const unreadNotifications = await Notification.countDocuments({ read: false });
+
+    const stats = {
+      totalPCs,
+      totalTasks,
+      totalLogs,
+      unreadNotifications,
+    };
+
+    res.json(formatResponse(true, "dashboard stats", stats));
+  } catch (err) {
+    next(err);
+  }
+};

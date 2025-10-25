@@ -1,24 +1,34 @@
-// This service is responsible for dispatching tasks to PC agents.
-// Implementation depends on how agents communicate (HTTP polling, WebSocket, SSH, Ansible, etc.)
-
+// src/services/automationService.js
 import Task from "../models/Task.js";
-import axios from "axios"; // if using HTTP push to agent
-import { markPCOnline } from "./networkService.js";
+import axios from "axios";
+import { markPCOnline, markPCOffline } from "./networkService.js";
 
+/**
+ * Send a queued task to a PC agent.
+ * (You can later replace this HTTP logic with MQTT, WebSocket, etc.)
+ */
 export const dispatchTaskToAgent = async (task) => {
-  // stub: find the PC address and try to send
-  const pc = await task.populate("pc").execPopulate();
-  const agentUrl = `http://${pc.ipAddress}:4000/agent/tasks`; // example agent endpoint
   try {
-    // Try send (if your agent supports it)
-    await axios.post(agentUrl, { taskId: task._id, command: task.command, params: task.params }, { timeout: 5000 });
+    const pc = await Task.findById(task._id).populate("pc");
+    if (!pc || !pc.pc) throw new Error("PC not found");
+
+    const agentUrl = `http://${pc.pc.ipAddress}:4000/agent/tasks`;
+
+    await axios.post(agentUrl, {
+      taskId: pc._id,
+      command: pc.command,
+      params: pc.params,
+    });
+
     task.status = "running";
     await task.save();
+    await markPCOnline(pc.pc._id);
+
+    console.log("✅ Task dispatched to agent:", agentUrl);
     return true;
   } catch (err) {
-    console.warn("Dispatch failed:", err.message);
+    console.warn("⚠️  Task dispatch failed:", err.message);
+    if (task?.pc) await markPCOffline(task.pc);
     return false;
   }
 };
-
-// You can also add Ansible / PowerShell / SSH orchestration here later.

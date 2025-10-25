@@ -1,54 +1,86 @@
-import PC from "../models/PC.js";
-import Task from "../models/Task.js";
 import Log from "../models/Log.js";
+import PC from "../models/PC.js";
+import Admin from "../models/Admin.js";
 import { formatResponse } from "../utils/response.js";
 
-// list PCs
-export const getAllPCs = async (req, res, next) => {
+/**
+ * @desc List all logs in reverse chronological order
+ * @route GET /api/logs
+ * @access Private (Admin)
+ */
+export const listLogs = async (req, res, next) => {
   try {
-    const pcs = await PC.find().sort({ name: 1 });
-    res.json(formatResponse(true, "pcs list", pcs));
+    const logs = await Log.find()
+      .populate("pc", "name ipAddress")
+      .populate("admin", "username name")
+      .sort({ timestamp: -1 });
+
+    res.json(formatResponse(true, "logs list", logs));
   } catch (err) {
     next(err);
   }
 };
 
-// create / register a PC (Admin can add)
-export const createPC = async (req, res, next) => {
+/**
+ * @desc Get logs for a specific PC
+ * @route GET /api/logs/pc/:pcId
+ * @access Private (Admin)
+ */
+export const getLogsByPC = async (req, res, next) => {
   try {
-    const { name, ipAddress, macAddress, os } = req.body;
-    const pc = await PC.create({ name, ipAddress, macAddress, os, status: "unknown" });
-    await Log.create({ action: "create_pc", pc: pc._id, admin: req.admin?.id, details: { name, ipAddress } });
-    res.json(formatResponse(true, "pc created", pc));
+    const { pcId } = req.params;
+    const pc = await PC.findById(pcId);
+    if (!pc) return res.status(404).json(formatResponse(false, "PC not found"));
+
+    const logs = await Log.find({ pc: pcId })
+      .populate("admin", "username name")
+      .sort({ timestamp: -1 });
+
+    res.json(formatResponse(true, `logs for PC ${pc.name}`, logs));
   } catch (err) {
     next(err);
   }
 };
 
-// get single pc
-export const getPC = async (req, res, next) => {
+/**
+ * @desc Get logs for a specific admin
+ * @route GET /api/logs/admin/:adminId
+ * @access Private (Admin)
+ */
+export const getLogsByAdmin = async (req, res, next) => {
   try {
-    const pc = await PC.findById(req.params.id);
-    if (!pc) return res.status(404).json(formatResponse(false, "pc not found"));
-    res.json(formatResponse(true, "pc", pc));
+    const { adminId } = req.params;
+    const admin = await Admin.findById(adminId);
+    if (!admin) return res.status(404).json(formatResponse(false, "Admin not found"));
+
+    const logs = await Log.find({ admin: adminId })
+      .populate("pc", "name ipAddress")
+      .sort({ timestamp: -1 });
+
+    res.json(formatResponse(true, `logs for admin ${admin.username}`, logs));
   } catch (err) {
     next(err);
   }
 };
 
-// send command (creates a Task)
-export const sendCommandToPC = async (req, res, next) => {
+/**
+ * @desc Create a manual log entry
+ * @route POST /api/logs
+ * @access Private (Admin)
+ */
+export const createLog = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const { command, params } = req.body;
-    const pc = await PC.findById(id);
-    if (!pc) return res.status(404).json(formatResponse(false, "pc not found"));
+    const { action, pc, details } = req.body;
+    if (!action) return res.status(400).json(formatResponse(false, "action required"));
 
-    const task = await Task.create({ pc: pc._id, command, params, createdBy: req.admin?.id });
-    await Log.create({ action: "send_command", pc: pc._id, admin: req.admin?.id, details: { command, taskId: task._id } });
+    const log = await Log.create({
+      action,
+      pc,
+      admin: req.admin?.id,
+      details,
+    });
 
-    // NOTE: actual delivery to PC agent is handled by automationService (separate)
-    res.json(formatResponse(true, "command queued", { taskId: task._id }));
+    res.json(formatResponse(true, "log created", log));
   } catch (err) {
     next(err);
   }

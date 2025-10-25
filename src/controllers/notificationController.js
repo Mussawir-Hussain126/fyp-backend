@@ -1,54 +1,76 @@
+import Notification from "../models/Notification.js";
 import PC from "../models/PC.js";
-import Task from "../models/Task.js";
-import Log from "../models/Log.js";
 import { formatResponse } from "../utils/response.js";
 
-// list PCs
-export const getAllPCs = async (req, res, next) => {
+/**
+ * GET /api/notifications
+ * Private (Admin)
+ */
+export const listNotifications = async (req, res, next) => {
   try {
-    const pcs = await PC.find().sort({ name: 1 });
-    res.json(formatResponse(true, "pcs list", pcs));
+    const { unread } = req.query;
+    const filter = {};
+    if (unread === "true") filter.read = false;
+
+    const items = await Notification.find(filter)
+      .populate("pc", "name ipAddress")
+      .sort({ sentAt: -1 });
+
+    res.json(formatResponse(true, "notifications list", items));
   } catch (err) {
     next(err);
   }
 };
 
-// create / register a PC (Admin can add)
-export const createPC = async (req, res, next) => {
+/**
+ * POST /api/notifications
+ * Private (Admin)
+ */
+export const createNotification = async (req, res, next) => {
   try {
-    const { name, ipAddress, macAddress, os } = req.body;
-    const pc = await PC.create({ name, ipAddress, macAddress, os, status: "unknown" });
-    await Log.create({ action: "create_pc", pc: pc._id, admin: req.admin?.id, details: { name, ipAddress } });
-    res.json(formatResponse(true, "pc created", pc));
+    const { title, message, level = "info", pc } = req.body;
+    if (!title || !message) {
+      return res.status(400).json(formatResponse(false, "title and message required"));
+    }
+    if (pc) {
+      const pcDoc = await PC.findById(pc);
+      if (!pcDoc) return res.status(404).json(formatResponse(false, "PC not found"));
+    }
+
+    const notif = await Notification.create({ title, message, level, pc });
+    res.json(formatResponse(true, "notification created", notif));
   } catch (err) {
     next(err);
   }
 };
 
-// get single pc
-export const getPC = async (req, res, next) => {
+/**
+ * PATCH /api/notifications/:id/read
+ * Private (Admin)
+ */
+export const markRead = async (req, res, next) => {
   try {
-    const pc = await PC.findById(req.params.id);
-    if (!pc) return res.status(404).json(formatResponse(false, "pc not found"));
-    res.json(formatResponse(true, "pc", pc));
+    const notif = await Notification.findByIdAndUpdate(
+      req.params.id,
+      { read: true },
+      { new: true }
+    );
+    if (!notif) return res.status(404).json(formatResponse(false, "notification not found"));
+    res.json(formatResponse(true, "notification marked read", notif));
   } catch (err) {
     next(err);
   }
 };
 
-// send command (creates a Task)
-export const sendCommandToPC = async (req, res, next) => {
+/**
+ * DELETE /api/notifications/:id
+ * Private (Admin)
+ */
+export const removeNotification = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const { command, params } = req.body;
-    const pc = await PC.findById(id);
-    if (!pc) return res.status(404).json(formatResponse(false, "pc not found"));
-
-    const task = await Task.create({ pc: pc._id, command, params, createdBy: req.admin?.id });
-    await Log.create({ action: "send_command", pc: pc._id, admin: req.admin?.id, details: { command, taskId: task._id } });
-
-    // NOTE: actual delivery to PC agent is handled by automationService (separate)
-    res.json(formatResponse(true, "command queued", { taskId: task._id }));
+    const deleted = await Notification.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json(formatResponse(false, "notification not found"));
+    res.json(formatResponse(true, "notification removed", deleted));
   } catch (err) {
     next(err);
   }

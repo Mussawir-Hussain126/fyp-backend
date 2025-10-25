@@ -2,7 +2,8 @@ import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import morgan from "morgan";
-
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./config/swagger.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import pcRoutes from "./routes/pcRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
@@ -26,6 +27,9 @@ app.use("/api/pcs", pcRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/logs", logRoutes);
 app.use("/api/notifications", notificationRoutes);
+
+//swagger
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // error handler (should be after routes)
 app.use(errorMiddleware);
